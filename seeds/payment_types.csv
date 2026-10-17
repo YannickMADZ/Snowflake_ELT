@@ -1,0 +1,8 @@
+payment_type_id,payment_type_name,is_tip_captured,is_revenue_payment
+0,Flex Fare trip,false,true
+1,Credit card,true,true
+2,Cash,false,true
+3,No charge,false,false
+4,Dispute,false,false
+5,Unknown,false,false
+6,Voided trip,false,false

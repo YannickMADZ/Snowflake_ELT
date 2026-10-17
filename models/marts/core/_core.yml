@@ -1,0 +1,162 @@
+version: 2
+
+models:
+  # ===================================================================== FAIT
+  - name: fct_trips
+    description: '{{ doc("fct_trips") }}'
+    columns:
+      - name: trip_id
+        description: >
+          **Clé primaire.** Identifiant du trajet (row_id Socrata conservé par le
+          Projet 1). Unique car le grain est « un trajet par ligne » : un doublon
+          fausserait tous les comptages et toutes les moyennes.
+        data_tests: [unique, not_null]
+      - name: date_key
+        description: Clé étrangère -> dim_date (date de PRISE EN CHARGE, AAAAMMJJ).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_date'), field: date_key}
+      - name: hour_key
+        description: Clé étrangère -> dim_time_of_day (heure de prise en charge, 0-23).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_time_of_day'), field: hour_key}
+      - name: pickup_location_id
+        description: Clé étrangère -> dim_location (rôle « départ »).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_location'), field: location_id}
+      - name: dropoff_location_id
+        description: Clé étrangère -> dim_location (rôle « arrivée »).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_location'), field: location_id}
+      - name: payment_type_id
+        description: Clé étrangère -> dim_payment_type.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_payment_type'), field: payment_type_id}
+      - name: vendor_id
+        description: Clé étrangère -> dim_vendor.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_vendor'), field: vendor_id}
+      - name: rate_code_id
+        description: >
+          Clé étrangère -> dim_rate_code. NULL autorisé : 2,3 % des trajets
+          (payment_type 0) n'ont pas de métadonnées véhicule ; imputer une valeur
+          inventerait un tarif. Le test relationships ignore les NULL.
+        data_tests:
+          - relationships:
+              arguments: {to: ref('dim_rate_code'), field: rate_code_id}
+      - name: total_amount
+        description: >
+          **Mesure additive.** Montant total facturé ($). Valeur de référence du
+          revenu (le Projet 1 a montré qu'il est juste même quand les composantes
+          ne s'additionnent pas). Pour un revenu, filtrer is_revenue_analyzable.
+        data_tests: [not_null]
+      - name: fare_amount
+        description: Mesure additive. Tarif temps + distance.
+      - name: tip_amount
+        description: >
+          Mesure additive. Pourboire. Saisi uniquement en carte : pour un
+          pourboire moyen, filtrer is_tip_captured.
+      - name: extra_net
+        description: Mesure additive. `extra` corrigé du double comptage des surcharges.
+      - name: trip_distance_mi
+        description: Mesure additive. Distance en miles ; exclure les lignes is_distance_analyzable = false.
+      - name: duration_min
+        description: Mesure additive. Durée en minutes (0 < durée <= 180, règle du Projet 1).
+      - name: speed_mph
+        description: Mesure NON additive (moyenne, jamais somme). Vitesse moyenne implicite.
+      - name: tip_pct_of_fare
+        description: Mesure NON additive. Pourboire en % du tarif, carte uniquement.
+      - name: passenger_count
+        description: Mesure additive. NULL si métadonnées manquantes ; 0 = saisie non faite (vendor 1).
+      - name: is_revenue_analyzable
+        description: '{{ doc("rule_revenue") }}'
+      - name: is_distance_analyzable
+        description: Faux pour les distances nulles (GPS) — exclure des analyses distance/vitesse.
+      - name: is_location_analyzable
+        description: Faux si zone 264/265 en départ ou arrivée — exclure des analyses géographiques.
+      - name: distance_band
+        description: Tranche de distance (macro bucketize, bornes dans vars.distance_bands_mi).
+      - name: duration_band
+        description: Tranche de durée (macro bucketize, bornes dans vars.duration_bands_min).
+
+  # =============================================================== DIMENSIONS
+  - name: dim_date
+    description: >
+      **Grain : une date calendaire.** Années civiles complètes couvrant les
+      données (bornes calculées, pas écrites en dur). Répond à « quels jours,
+      semaine vs week-end ».
+    columns:
+      - name: date_key
+        description: Clé primaire, entier AAAAMMJJ.
+        data_tests: [unique, not_null]
+      - name: calendar_date
+        data_tests: [unique, not_null]
+      - name: is_weekend
+        description: Samedi ou dimanche (ISO 6, 7).
+
+  - name: dim_time_of_day
+    description: '**Grain : une heure de la journée (0-23).** Avec la plage horaire (nuit, pointes...).'
+    columns:
+      - name: hour_key
+        description: Clé primaire, heure 0-23.
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
+                quote: false
+      - name: day_period
+        description: Plage horaire ; le préfixe numérique ordonne le tri alphabétique.
+
+  - name: dim_location
+    description: >
+      **Grain : une zone TLC.** Source : seed taxi_zone_lookup. Dimension à
+      rôles multiples (départ et arrivée).
+    columns:
+      - name: location_id
+        description: Clé primaire, LocationID TLC (1-265).
+        data_tests: [unique, not_null]
+      - name: borough
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Bronx', 'Brooklyn', 'EWR', 'Manhattan', 'Queens', 'Staten Island', 'Unknown', 'N/A']
+      - name: is_unknown_zone
+        description: Zones 264/265 (Unknown / N/A).
+
+  - name: dim_payment_type
+    description: '**Grain : un mode de paiement TLC.** Source : seed payment_types.'
+    columns:
+      - name: payment_type_id
+        description: Clé primaire, code TLC 0-6.
+        data_tests: [unique, not_null]
+      - name: is_tip_captured
+        description: Le pourboire est-il enregistré pour ce mode ? (carte uniquement)
+      - name: is_revenue_payment
+        description: Le paiement correspond-il à une recette ? (faux pour sans frais, litige, inconnu, annulé)
+
+  - name: dim_vendor
+    description: '**Grain : un fournisseur de terminal TPEP.** Source : seed vendors.'
+    columns:
+      - name: vendor_id
+        description: Clé primaire.
+        data_tests: [unique, not_null]
+
+  - name: dim_rate_code
+    description: '**Grain : un code tarifaire TLC.** Source : seed rate_codes.'
+    columns:
+      - name: rate_code_id
+        description: Clé primaire (99 = inconnu).
+        data_tests: [unique, not_null]

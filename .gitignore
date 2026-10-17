@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------- SECRETS
+# Ne JAMAIS versionner : identifiants Snowflake, clés privées, profil dbt local.
+.env
+.env.*
+!.env.example
+profiles.yml
+*.p8
+*.pem
+*.key
+rsa_key*
+.snowflake/
+.user.yml
+
+# ---------------------------------------------------------------- DONNÉES
+# Le CSV du Projet 1 (plusieurs centaines de Mo) reste local ; il est chargé
+# dans Snowflake, pas dans Git. Les seeds (petits référentiels) sont versionnés.
+data/*
+!data/README.md
+*.csv
+*.csv.gz
+!seeds/*.csv
+*.parquet
+
+# ---------------------------------------------------------------- dbt
+target/
+dbt_packages/
+logs/
+package-lock.yml
+
+# ---------------------------------------------------------------- Python / OS / IDE
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

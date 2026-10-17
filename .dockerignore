@@ -1,0 +1,17 @@
+# Contexte de build minimal : seul requirements.txt est copié dans l'image.
+# Exclure surtout les secrets et le CSV de plusieurs centaines de Mo.
+.env
+.env.*
+profiles.yml
+*.p8
+*.pem
+.snowflake/
+data/
+target/
+logs/
+dbt_packages/
+.venv/
+venv/
+.git/
+__pycache__/
+docs/dbt-docs/

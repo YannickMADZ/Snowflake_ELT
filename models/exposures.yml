@@ -1,0 +1,21 @@
+version: 2
+
+# Une exposure déclare un usage EN AVAL de l'entrepôt. Elle apparaît dans le
+# lineage : on voit ainsi d'un coup d'œil quels modèles casseraient le tableau
+# de bord des analystes si on les modifiait.
+exposures:
+  - name: tableau_de_bord_activite_revenus
+    label: Tableau de bord activité & revenus (analystes)
+    type: dashboard
+    maturity: low
+    description: >
+      Usage cible : suivi horaire de l'activité et des revenus, top
+      origines-destinations, comparaison des modes de paiement. Répond aux
+      questions Activité, Revenus, Paiement et Localisation du besoin.
+    depends_on:
+      - ref('agg_trips_hourly')
+      - ref('agg_zone_pairs')
+      - ref('fct_trips')
+      - ref('dim_payment_type')
+    owner:
+      name: Équipe analytique NYC Taxi

@@ -1,0 +1,51 @@
+version: 2
+
+models:
+  - name: int_trips_enriched
+    description: >
+      Trajets du staging enrichis des règles métier : correction du double
+      comptage de `extra`, indicateurs d'éligibilité par type d'analyse,
+      pourboire en % (carte uniquement), tranches de distance et de durée.
+      **Grain : un trajet.**
+    columns:
+      - name: trip_id
+        data_tests: [unique, not_null]
+      - name: extra_net
+        description: >
+          `extra` sans les surcharges qu'il contient déjà pour les lignes
+          flag_extra_includes_surcharges. À utiliser pour toute décomposition du
+          revenu par composante.
+      - name: is_revenue_analyzable
+        description: Vrai si le montant est une vraie recette (ni négatif, ni sans frais / litige / annulé).
+      - name: is_distance_analyzable
+        description: Faux si distance nulle (GPS défaillant) — exclure des analyses distance/vitesse.
+      - name: is_location_analyzable
+        description: Faux si départ ou arrivée en zone 264/265 — exclure des analyses géographiques.
+      - name: is_tip_captured
+        description: Vrai si le mode de paiement enregistre le pourboire (carte bancaire).
+      - name: tip_pct_of_fare
+        description: Pourboire / tarif x 100, renseigné uniquement quand le pourboire est saisi.
+      - name: distance_band
+        data_tests: [not_null]
+      - name: duration_band
+        data_tests: [not_null]
+    data_tests:
+      - expression_is_true:
+          name: int_trips_extra_net_explains_total
+          description: >
+            BLOQUANT. Pour les lignes où `extra` inclut les surcharges, la
+            correction doit rendre le total cohérent : total = composantes
+            corrigées. Prouve que la règle 1 corrige exactement l'anomalie.
+          arguments:
+            expression: >
+              not flag_extra_includes_surcharges
+              or abs(total_amount - (fare_amount + extra_net + mta_tax + tip_amount + tolls_amount
+                     + improvement_surcharge + coalesce(congestion_surcharge, 0) + coalesce(airport_fee, 0)))
+                 <= {{ var('amount_tolerance') }} + 0.001
+      - expression_is_true:
+          name: int_trips_tip_pct_plausible
+          description: "Pourboire supérieur au tarif : générosité réelle ou erreur de saisie, documenté."
+          arguments:
+            expression: "tip_pct_of_fare <= {{ var('max_plausible_tip_pct') }}"
+          config:
+            severity: warn

@@ -1,0 +1,47 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Couche Bronze : le CSV nettoyé du Projet 1 chargé TEL QUEL dans Snowflake par
+      PUT + COPY INTO (sql/snowflake/05_load_bronze.sql). dbt ne crée ni ne modifie
+      jamais cette couche ; il la lit via source().
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'NYC_TAXI_DB') }}"
+    schema: BRONZE
+    tables:
+      - name: yellow_trips_raw
+        identifier: YELLOW_TRIPS_RAW
+        description: >
+          Un trajet NYC Yellow Taxi de janvier 2023 par ligne, tel que nettoyé et
+          validé par le Projet 1 (5 règles de suppression appliquées, 7 indicateurs
+          flag_* d'anomalies conservées). Colonnes techniques _source_file,
+          _source_row_number et _loaded_at ajoutées au chargement.
+        config:
+          loaded_at_field: _loaded_at
+          # Le fichier est chargé une fois : la fraîcheur signale surtout une
+          # Bronze oubliée (rechargement jamais refait après un nouveau CSV).
+          freshness:
+            warn_after: {count: 30, period: day}
+        columns:
+          - name: row_id
+            description: Identifiant de ligne Socrata (:id) conservé par le Projet 1.
+            data_tests:
+              # BLOQUANT : row_id devient la clé du fait. Le Projet 1 l'a validé
+              # unique dans le CSV ; on le revérifie APRÈS ingestion pour détecter
+              # un double chargement (COPY relancé sans TRUNCATE, fichier en double).
+              - unique
+              - not_null
+          - name: tpep_pickup_datetime
+            description: Horodatage de prise en charge (heure locale NY, sans fuseau).
+            data_tests:
+              - not_null   # BLOQUANT : sans date, le trajet ne peut être relié à dim_date
+          - name: tpep_dropoff_datetime
+            data_tests:
+              - not_null
+          - name: store_and_fwd_flag
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: ['Y', 'N']
+                  config:
+                    severity: warn   # la standardisation en booléen est faite en staging

@@ -1,0 +1,87 @@
+# =============================================================================
+# Projet dbt — NYC Yellow Taxi Data Warehouse (Projet 2)
+# =============================================================================
+# Ce fichier décrit le PROJET (quels dossiers, quelles matérialisations, quels
+# schemas). La CONNEXION, elle, est dans profiles.yml (non versionné), qui ne
+# contient que des appels env_var() : aucun secret ici.
+name: nyc_taxi_dw
+version: "1.0.0"
+config-version: 2
+profile: nyc_taxi_dw
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets: ["target", "dbt_packages"]
+
+# -----------------------------------------------------------------------------
+# Paramètres métier. Ils reprennent les seuils du Projet 1 (config.yaml,
+# section cleaning) : les tests dbt RE-CONTRÔLENT dans Snowflake que les lignes
+# hors seuils ont bien été retirées. Modifiables sans toucher au SQL :
+#   dbt build --vars '{p1_max_duration_min: 240}'
+# -----------------------------------------------------------------------------
+vars:
+  p1_max_duration_min: 180        # règle « duree_trop_longue » du Projet 1 (3 h)
+  p1_max_speed_mph: 80            # règle de vitesse implicite du Projet 1
+  unknown_zone_ids: [264, 265]    # zones TLC « Unknown » / « N/A »
+  amount_tolerance: 0.01          # tolérance de comparaison des montants ($)
+  max_plausible_passengers: 6     # capacité légale d'un yellow cab (+ enfant) ; au-delà : avertissement
+  max_plausible_tip_pct: 100      # pourboire > 100 % du tarif : avertissement
+  # Tranches d'analyse (bornes hautes exclues), utilisées par la macro bucketize
+  distance_bands_mi: [1, 2, 5, 10, 20]
+  duration_bands_min: [5, 10, 20, 30, 60]
+  suspend_warehouse_on_run_end: true
+
+# -----------------------------------------------------------------------------
+# Matérialisations et schemas par couche (Medallion).
+# Les noms de schemas sont EXACTS (BRONZE/SILVER/GOLD) grâce à la macro
+# generate_schema_name surchargée dans macros/.
+# -----------------------------------------------------------------------------
+models:
+  nyc_taxi_dw:
+    +persist_docs:          # descriptions dbt recopiées en COMMENT Snowflake
+      relation: true
+      columns: true
+    staging:
+      +schema: silver
+      +materialized: view   # simple projection typée de la Bronze : rien à stocker
+    intermediate:
+      +schema: silver
+      +materialized: table  # règles métier calculées une fois, relues par 3 modèles Gold
+    marts:
+      +schema: gold
+      +materialized: table  # requêtes analystes rapides, coût de calcul payé une fois
+
+seeds:
+  nyc_taxi_dw:
+    +schema: silver
+    +quote_columns: false
+    taxi_zone_lookup:
+      +column_types:
+        location_id: "number(38,0)"
+        borough: varchar
+        zone: varchar
+        service_zone: varchar
+    vendors:
+      +column_types:
+        vendor_id: "number(38,0)"
+        vendor_name: varchar
+    payment_types:
+      +column_types:
+        payment_type_id: "number(38,0)"
+        payment_type_name: varchar
+        is_tip_captured: boolean
+        is_revenue_payment: boolean
+    rate_codes:
+      +column_types:
+        rate_code_id: "number(38,0)"
+        rate_code_name: varchar
+
+# Suspend le warehouse dès la fin de dbt run/build/test/seed au lieu
+# d'attendre les 60 s d'AUTO_SUSPEND (voir macros/suspend_warehouse.sql).
+on-run-end:
+  - "{{ suspend_warehouse() }}"

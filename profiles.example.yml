@@ -1,0 +1,41 @@
+# =============================================================================
+# MODÈLE de profiles.yml — à copier en profiles.yml (ignoré par Git) :
+#     Copy-Item profiles.example.yml profiles.yml      (PowerShell)
+#     cp profiles.example.yml profiles.yml             (bash)
+# Il ne contient AUCUNE valeur : uniquement des env_var() lues dans
+# l'environnement (fichier .env chargé par scripts/load_env.ps1 ou load_env.sh).
+#
+# Deux cibles :
+#   keypair  (par défaut, recommandé) : paire de clés RSA, pas de MFA à saisir
+#   password : mot de passe (+ MFA éventuelle selon le compte)
+# Choix de la cible : variable DBT_TARGET dans .env.
+# =============================================================================
+nyc_taxi_dw:
+  target: "{{ env_var('DBT_TARGET', 'keypair') }}"
+  outputs:
+    keypair:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH', '') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'SYSADMIN') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'NYC_TAXI_WH') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'NYC_TAXI_DB') }}"
+      schema: SILVER
+      threads: 4
+      client_session_keep_alive: false
+      query_tag: nyc_taxi_dw_dbt
+    password:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD', '') }}"
+      authenticator: "{{ env_var('SNOWFLAKE_AUTHENTICATOR', 'snowflake') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'SYSADMIN') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'NYC_TAXI_WH') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'NYC_TAXI_DB') }}"
+      schema: SILVER
+      threads: 4
+      client_session_keep_alive: false
+      query_tag: nyc_taxi_dw_dbt

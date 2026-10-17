@@ -1,0 +1,24 @@
+# =============================================================================
+# Usage (PowerShell ou bash, depuis la racine du dépôt) :
+#   docker compose build                                   # une fois
+#   docker compose run --rm dw                             # pipeline complet
+#   docker compose run --rm dw dbt build                   # une commande dbt
+#   docker compose run --rm --service-ports dw dbt docs serve --host 0.0.0.0 --port 8080
+# =============================================================================
+services:
+  dw:
+    build: .
+    image: nyc-taxi-dw:latest
+    # Identifiants Snowflake lus dans .env AU LANCEMENT (jamais copiés dans l'image).
+    env_file: .env
+    environment:
+      # Dans le conteneur, le dépôt est en /app : le CSV doit donc être dans
+      # ./data (monté avec le reste). Ces valeurs remplacent celles de .env,
+      # qui peuvent contenir des chemins Windows invisibles depuis Linux.
+      P1_CSV_PATH: data/trips_clean.csv
+      P1_TRANSFORM_SUMMARY: data/transform_summary.json
+    volumes:
+      - .:/app
+    working_dir: /app
+    ports:
+      - "8080:8080"   # dbt docs serve (utilisé seulement avec --service-ports)

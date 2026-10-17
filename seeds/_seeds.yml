@@ -1,0 +1,31 @@
+version: 2
+
+seeds:
+  - name: taxi_zone_lookup
+    description: >
+      Table de référence officielle TLC des 265 zones de taxi (LocationID,
+      borough, zone, service_zone). Petite (265 lignes), stable, publiée par la
+      même source que les données de trajets : versionnée dans Git, elle rend
+      le projet reproductible sans appel réseau et traçable (toute modification
+      apparaît dans l'historique Git).
+    columns:
+      - name: location_id
+        data_tests: [unique, not_null]
+  - name: vendors
+    description: Codes VendorID du dictionnaire de données TLC.
+    columns:
+      - name: vendor_id
+        data_tests: [unique, not_null]
+  - name: payment_types
+    description: >
+      Codes payment_type du dictionnaire TLC, enrichis de deux règles métier
+      versionnées : is_tip_captured (pourboire saisi seulement en carte) et
+      is_revenue_payment (les codes 3 à 6 ne sont pas des recettes).
+    columns:
+      - name: payment_type_id
+        data_tests: [unique, not_null]
+  - name: rate_codes
+    description: Codes RatecodeID du dictionnaire TLC (99 = inconnu).
+    columns:
+      - name: rate_code_id
+        data_tests: [unique, not_null]

@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: agg_trips_hourly
+    description: >
+      **Grain : une heure calendaire (date_key x hour_key).** Activité et revenus
+      pré-agrégés pour les tableaux de bord. Construit depuis fct_trips ; les
+      mesures de revenu excluent les lignes non is_revenue_analyzable.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [date_key, hour_key]
+    columns:
+      - name: date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_date'), field: date_key}
+      - name: hour_key
+        data_tests: [not_null]
+      - name: trip_count
+        description: Nombre de trajets (tous, y compris ceux avec indicateur qualité).
+      - name: revenue_total
+        description: '{{ doc("metric_revenue_total") }}'
+      - name: avg_total_per_trip
+        description: Montant moyen par trajet, sur les trajets is_revenue_analyzable.
+      - name: avg_tip_pct_card
+        description: Pourboire moyen en % du tarif, paiements carte uniquement.
+
+  - name: agg_zone_pairs
+    description: >
+      **Grain : un couple (zone de départ, zone d'arrivée).** Classement des
+      origines-destinations ; exclut les zones 264/265.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [pickup_location_id, dropoff_location_id]
+    columns:
+      - name: trip_count
+        description: Nombre de trajets entre les deux zones.
+      - name: median_duration_min
+        description: Durée médiane, plus robuste que la moyenne aux embouteillages extrêmes.

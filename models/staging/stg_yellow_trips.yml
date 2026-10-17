@@ -1,0 +1,132 @@
+version: 2
+
+models:
+  - name: stg_yellow_trips
+    description: >
+      Staging de la Bronze : renommage, typage décimal des montants, booléen pour
+      store_and_fwd_flag, colonnes de calendrier, et recalcul indépendant de la
+      durée et de l'écart de total. **Grain : un trajet.** Aucune ligne filtrée.
+      Les tests de ce modèle RE-CONTRÔLENT dans Snowflake les garanties du Projet 1.
+    columns:
+      - name: trip_id
+        description: Identifiant unique du trajet (row_id Socrata du Projet 1).
+        data_tests: [unique, not_null]
+      - name: vendor_id
+        description: Code du fournisseur du terminal embarqué.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('vendors')
+                field: vendor_id
+      - name: payment_type_id
+        description: Code TLC du mode de paiement (0 = Flex Fare, 1 = carte, 2 = espèces...).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6]
+                quote: false
+      - name: rate_code_id
+        description: Code tarifaire ; NULL quand les métadonnées du véhicule manquent.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6, 99]
+                quote: false
+      - name: pickup_location_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('taxi_zone_lookup')
+                field: location_id
+      - name: dropoff_location_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('taxi_zone_lookup')
+                field: location_id
+      - name: pickup_at
+        data_tests: [not_null]
+      - name: dropoff_at
+        data_tests: [not_null]
+      - name: duration_min
+        description: Durée calculée par le Projet 1 (minutes, 3 décimales).
+      - name: duration_min_recomputed
+        description: Durée recalculée dans Snowflake à partir des horodatages chargés.
+      - name: total_gap_p1
+        description: Écart total - composantes calculé par le Projet 1.
+      - name: total_gap_recomputed
+        description: Même écart recalculé dans Snowflake (composantes NULL comptées 0).
+
+    data_tests:
+      # ----------------------------------------------------------- BLOQUANTS
+      # Les règles de suppression du Projet 1 doivent rester vraies après
+      # ingestion. Une violation signifie que le CSV chargé n'est pas celui du
+      # Projet 1 ou qu'une conversion de type a altéré des valeurs.
+      - expression_is_true:
+          name: stg_trips_duration_within_p1_rules
+          description: Projet 1 a retiré les durées <= 0 et > p1_max_duration_min.
+          arguments:
+            expression: "duration_min > 0 and duration_min <= {{ var('p1_max_duration_min') }}"
+      - expression_is_true:
+          name: stg_trips_speed_within_p1_rules
+          description: Projet 1 a retiré les vitesses implicites > p1_max_speed_mph.
+          arguments:
+            expression: "speed_mph <= {{ var('p1_max_speed_mph') }} + 0.001"
+      - expression_is_true:
+          name: stg_trips_single_month
+          description: >
+            Un trajet n'appartient qu'à un seul mois (règle pickup_hors_du_mois).
+            Toutes les prises en charge doivent tomber dans le même mois calendaire.
+          arguments:
+            expression: "date_trunc('month', pickup_at) = (select min(date_trunc('month', pickup_at)) from {{ ref('stg_yellow_trips') }})"
+      - expression_is_true:
+          name: stg_trips_duration_survived_ingestion
+          description: >
+            La durée du Projet 1 et la durée recalculée depuis les horodatages
+            chargés coïncident : prouve que les timestamps n'ont pas été décalés
+            (fuseau, format) au chargement.
+          arguments:
+            expression: "abs(duration_min - duration_min_recomputed) <= 0.01"
+      - expression_is_true:
+          name: stg_trips_flags_negative_amount_consistent
+          arguments:
+            expression: "flag_negative_amount = (total_amount < 0)"
+      - expression_is_true:
+          name: stg_trips_flags_zero_distance_consistent
+          arguments:
+            expression: "flag_zero_distance = (trip_distance_mi = 0)"
+      - expression_is_true:
+          name: stg_trips_flags_unknown_zone_consistent
+          arguments:
+            expression: >
+              flag_unknown_zone = (pickup_location_id in ({{ var('unknown_zone_ids') | join(', ') }})
+                                   or dropoff_location_id in ({{ var('unknown_zone_ids') | join(', ') }}))
+      - expression_is_true:
+          name: stg_trips_flags_zero_passenger_consistent
+          arguments:
+            expression: "flag_zero_passenger = coalesce(passenger_count = 0, false)"
+
+      # -------------------------------------------------------- AVERTISSEMENTS
+      # Anomalies connues et documentées : on les compte, on ne bloque pas.
+      - expression_is_true:
+          name: stg_trips_total_gap_matches_p1
+          description: >
+            L'écart de total recalculé doit égaler celui du Projet 1. Avertissement
+            seulement : si le Projet 1 a calculé l'écart sans neutraliser les
+            composantes NULL, les lignes à métadonnées manquantes divergent sans
+            que la donnée soit fausse.
+          arguments:
+            expression: "abs(total_gap_recomputed - total_gap_p1) <= {{ var('amount_tolerance') }} + 0.001"
+          config:
+            severity: warn
+      - expression_is_true:
+          name: stg_trips_passenger_count_plausible
+          description: "Plus de passagers que la capacité d'un yellow cab : saisie douteuse, gardée."
+          arguments:
+            expression: "passenger_count <= {{ var('max_plausible_passengers') }}"
+          config:
+            severity: warn
